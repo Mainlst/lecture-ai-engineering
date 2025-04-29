@@ -14,6 +14,12 @@ from huggingface_hub import HfFolder
 st.set_page_config(page_title="Gemma Chatbot", layout="wide")
 
 # --- 初期化処理 ---
+
+# --- ① 追加：履歴を初期化 -----------------------------
+if "messages" not in st.session_state:
+    # role: "user" | "assistant"
+    st.session_state.messages = []
+    
 # NLTKデータのダウンロード（初回起動時など）
 metrics.initialize_nltk()
 
@@ -68,13 +74,41 @@ page = st.sidebar.radio(
 # --- メインコンテンツ ---
 if st.session_state.page == "チャット":
     if pipe:
-        ui.display_chat_page(pipe)
+        # ② 既存のチャット履歴を表示
+        for chat in st.session_state.messages:
+            with st.chat_message(chat["role"]):
+                st.markdown(chat["content"])
+
+        # ③ ユーザー入力欄（Enter で送信）
+        if prompt := st.chat_input("メッセージを入力してくださいにゃ"):
+            # ------------- 送信処理 -------------
+            # ユーザー発話を履歴に追加
+            st.session_state.messages.append(
+                {"role": "user", "content": prompt}
+            )
+
+            # ④ LLM へ送るプロンプトを構築
+            context = "\n".join(
+                f"{m['role'].capitalize()}: {m['content']}"
+                for m in st.session_state.messages[-6:]  # 直近6往復だけ渡す例
+            )
+            with st.chat_message("assistant"):
+                with st.spinner("思案中です…"):
+                    try:
+                        resp = pipe(context, max_new_tokens=512)[0]["generated_text"]
+                        # Gemma 生成文の後ろに context まで含まれる場合があるので後処理
+                        answer = resp[len(context):].strip()
+                    except Exception as e:
+                        answer = f"エラーが発生したにゃ: {e}"
+
+                    # 画面に表示
+                    st.markdown(answer)
+                    # 履歴に保存
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": answer}
+                    )
     else:
         st.error("チャット機能を利用できません。モデルの読み込みに失敗しました。")
-elif st.session_state.page == "履歴閲覧":
-    ui.display_history_page()
-elif st.session_state.page == "サンプルデータ管理":
-    ui.display_data_page()
 
 # --- フッターなど（任意） ---
 st.sidebar.markdown("---")
