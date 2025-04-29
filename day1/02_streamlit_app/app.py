@@ -1,206 +1,205 @@
-# app.py
+# app.py (fixed)
+"""
+Gemma Chatbot – Streamlit
+* 連続対話
+* 評価ページ
+* 永続設定 (JSON)
+* 画像アイコン保存
+* ユーザー名 / LLM 名をメッセージ内に表示 (chat_message に name 引数は無いので Markdown ラベルを挿入)
+"""
+
+import json
 import os
+import shutil
 import tempfile
+from datetime import datetime
+
 import streamlit as st
-import ui                   # UIモジュール（履歴表示など）
-import llm                  # LLMモジュール（ラッパ）
-import database             # データベースモジュール（任意）
-import metrics              # 評価指標モジュール（NLTK 初期化など）
-import data                 # データモジュール（サンプル投入）
 import torch
 from transformers import pipeline
+
+import ui
+import llm
+import database
+import metrics
+import data
 from config import MODEL_NAME
 
-# --------------------------------------------------
-# 基本設定
-# --------------------------------------------------
+# ------------------ 永続設定 ------------------
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+SETTINGS_JSON = os.path.join(ROOT_DIR, "user_settings.json")
+ICON_DIR = os.path.join(ROOT_DIR, "icons")
+os.makedirs(ICON_DIR, exist_ok=True)
+
+DEFAULT_SETTINGS = {
+    "assistant_name": "Luna-chan",
+    "assistant_persona": "あなたは優しいネコ耳AIアシスタントです。愛を込めてユーザーにご奉仕してください。",
+    "assistant_icon_emoji": "😺",
+    "assistant_icon_path": None,
+    "user_name": "You",
+}
+
+
+def load_settings() -> dict:
+    if os.path.exists(SETTINGS_JSON):
+        try:
+            with open(SETTINGS_JSON, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return {**DEFAULT_SETTINGS, **data}
+        except Exception:
+            pass
+    return DEFAULT_SETTINGS.copy()
+
+
+def save_settings(d: dict):
+    with open(SETTINGS_JSON, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
+
+
+# ------------------ Streamlit basic ------------------
 st.set_page_config(page_title="Gemma Chatbot", layout="wide")
 
-# --------------------------------------------------
-# セッションステート初期化
-# --------------------------------------------------
+# ------------------ Session init ------------------
+settings = load_settings()
+for k, v in settings.items():
+    st.session_state.setdefault(k, v)
 
-st.session_state.setdefault("messages", [])            # チャット履歴
-st.session_state.setdefault("assistant_name", "Luna‑chan")
-st.session_state.setdefault("assistant_persona", "あなたは優しいAIアシスタントです。愛を込めてユーザーに給仕してください。")
-# アイコンは ① emoji ② 画像パス のいずれかを保存
-st.session_state.setdefault("assistant_icon_emoji", "😺")
-st.session_state.setdefault("assistant_icon_path", None)
+st.session_state.setdefault("messages", [])
+st.session_state.setdefault("page", "チャット")
 
-# --------------------------------------------------
-# 1. ライブラリの初期化など
-# --------------------------------------------------
+# ------------------ external init ------------------
 metrics.initialize_nltk()
-
 database.init_db()
-
 data.ensure_initial_data()
 
-# --------------------------------------------------
-# 2. LLM のロード（キャッシュ）
-# --------------------------------------------------
-
+# ------------------ LLM ------------------
 @st.cache_resource
 def load_model():
-    """Gemma / そのほか HuggingFace LLM をロード"""
     try:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         st.sidebar.info(f"Using device: {device}")
         pipe = pipeline(
             "text-generation",
             model=MODEL_NAME,
-            model_kwargs={"torch_dtype": torch.bfloat16},
             device=device,
+            model_kwargs={"torch_dtype": torch.bfloat16},
         )
         return pipe
     except Exception as e:
-        st.sidebar.error(f"モデルの読み込みに失敗しました: {e}")
+        st.sidebar.error(f"モデル読込失敗: {e}")
         return None
 
 pipe = load_model()
 
-# --------------------------------------------------
-# 3. サイドバー（ページナビゲーション）
-# --------------------------------------------------
+# ------------------ Helpers ------------------
 
+def avatar():
+    return st.session_state["assistant_icon_path"] or st.session_state["assistant_icon_emoji"]
+
+# ------------------ Sidebar ------------------
 PAGES = ["チャット", "履歴閲覧", "サンプルデータ管理", "評価", "設定"]
 
-st.session_state.setdefault("page", "チャット")
-
-page = st.sidebar.radio(
-    "ページ選択",
-    PAGES,
-    index=PAGES.index(st.session_state.page),
-    key="page_selector",
-)
-st.session_state.page = page  # ラジオボタンの選択結果を保存
+page_select = st.sidebar.radio("ページ選択", PAGES, index=PAGES.index(st.session_state.page))
+st.session_state.page = page_select
 
 st.sidebar.markdown("---")
 st.sidebar.info("開発者: [Your Name]")
 
-# --------------------------------------------------
-# 4. ページごとの UI
-# --------------------------------------------------
-
-# ---- ヘルパー：現在のアシスタントアイコンを返す ----
-
-def current_avatar():
-    if st.session_state.assistant_icon_path:
-        return st.session_state.assistant_icon_path  # 画像ファイルパス
-    return st.session_state.assistant_icon_emoji
-
-# ---- チャットページ --------------------------------------------------
-
+# ------------------ Chat Page ------------------
 if st.session_state.page == "チャット":
     st.title("🤖 Gemma 2 Chatbot with Feedback")
     st.write("Gemmaモデルを使用したチャットボットです。回答に対してフィードバックを行えます。")
     st.markdown("---")
 
     if pipe is None:
-        st.error("チャット機能を利用できません。モデルの読み込みに失敗しました。")
+        st.error("チャット機能を利用できません。モデルを読み込めませんでした。")
     else:
-        # 履歴の描画
-        for chat in st.session_state.messages:
-            avatar = None
-            if chat["role"] == "assistant":
-                avatar = current_avatar()
-            with st.chat_message(chat["role"], avatar=avatar):
-                st.markdown(chat["content"])
+        # 履歴表示
+        for m in st.session_state.messages:
+            role = m["role"]
+            label = st.session_state["user_name"] if role == "user" else st.session_state["assistant_name"]
+            av = None if role == "user" else avatar()
+            with st.chat_message(role, avatar=av):
+                st.markdown(f"**{label}**\n\n{m['content']}")
 
-        # 入力ボックス
-        if prompt := st.chat_input("メッセージを入力してくださいにゃ"):
-            # ユーザー発話を即時表示
+        # 入力
+        if prompt := st.chat_input("メッセージを入力してください"):
+            # ユーザー発話
             with st.chat_message("user"):
-                st.markdown(prompt)
+                st.markdown(f"**{st.session_state['user_name']}**\n\n{prompt}")
             st.session_state.messages.append({"role": "user", "content": prompt})
 
-            # コンテキスト生成（直近 6 往復 + 性格プロンプト）
-            context = (
-                st.session_state.assistant_persona
-                + "\n"
-                + "\n".join(
-                    f"{m['role'].capitalize()}: {m['content']}" for m in st.session_state.messages[-6:]
-                )
+            # コンテキスト
+            context = st.session_state["assistant_persona"] + "\n" + "\n".join(
+                f"{m['role'].capitalize()}: {m['content']}" for m in st.session_state.messages[-6:]
             )
 
-            # LLM 呼び出し
-            with st.chat_message("assistant", avatar=current_avatar()):
+            with st.chat_message("assistant", avatar=avatar()):
                 with st.spinner("お返事を考えています…"):
                     try:
                         resp = pipe(context, max_new_tokens=512)[0]["generated_text"]
-                        answer = resp[len(context) :].strip()
+                        ans = resp[len(context):].strip()
                     except Exception as e:
-                        answer = f"エラーが発生したにゃ: {e}"
-                    st.markdown(answer)
-                    st.session_state.messages.append({"role": "assistant", "content": answer})
+                        ans = f"エラーが発生した: {e}"
+                    st.markdown(f"**{st.session_state['assistant_name']}**\n\n{ans}")
+                    st.session_state.messages.append({"role": "assistant", "content": ans})
 
-        # 終了ボタン
         if st.button("📝 チャットを終了して評価へ"):
             st.session_state.page = "評価"
-            st.experimental_rerun()
+            st.rerun()
 
-# ---- 履歴閲覧 --------------------------------------------------------
-
+# ------------------ Other Pages ------------------
 elif st.session_state.page == "履歴閲覧":
     ui.display_history_page()
-
-# ---- サンプルデータ管理 ---------------------------------------------
 
 elif st.session_state.page == "サンプルデータ管理":
     ui.display_data_page()
 
-# ---- 評価ページ ------------------------------------------------------
-
 elif st.session_state.page == "評価":
     st.header("🔍 チャット評価")
-
-    for chat in st.session_state.messages:
-        role_label = "👤User" if chat["role"] == "user" else f"{current_avatar()} {st.session_state.assistant_name}"
-        st.markdown(f"**{role_label}:** {chat['content']}")
-
+    for m in st.session_state.messages:
+        label = st.session_state["user_name"] if m["role"] == "user" else st.session_state["assistant_name"]
+        st.markdown(f"**{label}:** {m['content']}")
     st.markdown("---")
     rating = st.slider("このチャットの満足度 (1=😢〜5=😍)", 1, 5, 3)
     comment = st.text_area("コメント", placeholder="自由にご記入ください")
     if st.button("送信！"):
-        # 任意：DB に保存（実装していない場合はパス）
         try:
             database.save_evaluation(rating, comment, st.session_state.messages)
         except AttributeError:
             pass
-        st.success("ご協力ありがとうございますにゃん♪")
-
-# ---- 設定ページ ------------------------------------------------------
+        st.success("ご協力ありがとうございます♪")
 
 elif st.session_state.page == "設定":
     st.header("🎨 パーソナライズ設定")
+    st.write("変更後『💾 保存』を押すと次回起動時も反映されます。")
 
-    # 名前
-    st.session_state.assistant_name = st.text_input(
-        "LLMの名前", st.session_state.assistant_name
-    )
+    st.session_state.user_name = st.text_input("あなたの名前", st.session_state.user_name)
+    st.session_state.assistant_name = st.text_input("LLM の名前", st.session_state.assistant_name)
+    st.session_state.assistant_icon_emoji = st.text_input("アシスタントアイコン (絵文字)", st.session_state.assistant_icon_emoji)
 
-    # アイコン（emoji）
-    st.session_state.assistant_icon_emoji = st.text_input(
-        "アイコン (絵文字)", st.session_state.assistant_icon_emoji
-    )
-
-    # アイコン（画像アップロード）
-    uploaded_file = st.file_uploader("画像アイコンをアップロード (png/jpg)", type=["png", "jpg", "jpeg"])
-    if uploaded_file is not None:
-        # 一時フォルダに保存してパスを保持
-        temp_path = os.path.join(tempfile.gettempdir(), uploaded_file.name)
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.session_state.assistant_icon_path = temp_path
-        st.image(temp_path, width=64)
+    uploaded = st.file_uploader("画像アイコンをアップロード (png/jpg)", type=["png", "jpg", "jpeg"])
+    if uploaded is not None:
+        ts = datetime.now().strftime("%Y%m%d%H%M%S")
+        ext = os.path.splitext(uploaded.name)[1]
+        dst = os.path.join(ICON_DIR, f"icon_{ts}{ext}")
+        with open(dst, "wb") as f:
+            shutil.copyfileobj(uploaded, f)
+        st.session_state.assistant_icon_path = dst
+        st.image(dst, width=64)
     elif st.session_state.assistant_icon_path:
         st.image(st.session_state.assistant_icon_path, width=64)
 
-    # キャラクター性格
     st.session_state.assistant_persona = st.text_area(
-        "キャラクターの性格・システムプロンプト",
-        st.session_state.assistant_persona,
-        height=120,
+        "キャラクター性格 (システムプロンプト)", st.session_state.assistant_persona, height=120
     )
 
-    st.success("設定を保存しました (変更は即時反映されます)")
+    if st.button("💾 保存"):
+        save_settings({
+            "assistant_name": st.session_state.assistant_name,
+            "assistant_persona": st.session_state.assistant_persona,
+            "assistant_icon_emoji": st.session_state.assistant_icon_emoji,
+            "assistant_icon_path": st.session_state.assistant_icon_path,
+            "user_name": st.session_state.user_name,
+        })
+        st.success("設定を保存しました！")
