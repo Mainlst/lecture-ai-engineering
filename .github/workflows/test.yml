@@ -1,41 +1,99 @@
+# .github/workflows/test.yml
 name: ML Pipeline CI
 
 on:
-  # push:
-  #   branches: [ main, master  ]
+  push:
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
 
 jobs:
+  # --------------------------
+  # 1) テスト＆品質チェック
+  # --------------------------
   test:
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pytest great_expectations pandas scikit-learn flake8 black mypy pytest-cov
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        
-    - name: Lint with flake8
-      run: |
-        flake8 day5/演習3 --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 day5/演習3 --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
-        
-    - name: Format check with black
-      run: |
-        black --check day5/演習3
-        
-    - name: Run data tests
-      run: |
-        pytest day5/演習3/tests/test_data.py -v
-        
-    - name: Run model tests
-      run: |
-        pytest day5/演習3/tests/test_model.py -v
+      # リポジトリ取得
+      - uses: actions/checkout@v3
+
+      # Python セットアップ
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      # 依存ライブラリ
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            pytest pytest-cov pandas scikit-learn great_expectations \
+            flake8 black mypy
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # Lint
+      - name: Lint with flake8
+        run: |
+          flake8 day5/演習3 --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 day5/演習3 --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+
+      # フォーマットチェック
+      - name: Format check with black
+        run: black --check day5/演習3
+
+      # テスト実行（精度・推論時間・退化検知ふくむ）
+      - name: Run tests
+        run: |
+          pytest day5/演習3/tests/test_data.py   -v
+          pytest day5/演習3/tests/test_model.py  -v
+          pytest day5/演習3/tests/test_regression.py -v
+
+      # PR 用に最新メトリクスを保存（任意スクリプト）
+      - name: Save current metrics (accuracy & time)
+        if: github.event_name == 'pull_request'
+        run: |
+          python day5/演習3/scripts/save_metrics.py
+
+  # ---------------------------------
+  # 2) main へマージ後、Baseline 更新
+  #    （精度 OK ⇒ 新しい真打ちに昇格）
+  # ---------------------------------
+  promote-baseline:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install minimal deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas scikit-learn
+
+      # ベースライン化：モデル & メトリクスをコピー
+      - name: Promote model to new baseline
+        run: |
+          cp day5/演習3/models/titanic_model.pkl    day5/演習3/models/baseline_model.pkl
+          cp day5/演習3/models/current_metrics.json day5/演習3/models/baseline_metrics.json
+
+      # 変更をコミットして push（skip CI 付けてエンドレスループ防止）
+      - name: Commit and push new baseline
+        env:
+          GIT_AUTHOR_NAME:  github-actions[bot]
+          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME:  github-actions[bot]
+          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
+        run: |
+          git add day5/演習3/models/baseline_model.pkl \
+                  day5/演習3/models/baseline_metrics.json || true
+          git diff --staged --quiet && echo "No baseline changes" && exit 0
+          git commit -m "chore(ci): update baseline model & metrics [skip ci]"
+          git push
