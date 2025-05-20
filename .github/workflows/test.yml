@@ -47,14 +47,13 @@ jobs:
         pytest tests/test_data.py -v
 
     # --- Model Testing and Metrics ---
-    - name: Download previous model metrics
-      if: github.event_name == 'pull_request'
+    - name: Download previous model metrics (for PRs, if base branch is main/master)
+      if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'master')
       uses: actions/download-artifact@v4
       with:
-        name: model-metrics-${{ github.base_ref }} # または 'model-metrics-master' など固定名
-        path: ./previous_metrics_artifact
-        # merge-multiple: false # シングルアーティファクトなら不要なことが多い
-      continue-on-error: true # 前のアーティファクトがない場合でも続行  
+        name: model-metrics-${{ github.base_ref }} # ブランチ固有のアーティファクト名 (main または master)
+        path: ./previous_metrics_artifact # ダウンロード先のフォルダ (リポジトリルート直下)
+      continue-on-error: true # アーティファクトがなくてもエラーにしない
 
     - name: Run model training and tests (generates current_metrics.json)
       run: |
