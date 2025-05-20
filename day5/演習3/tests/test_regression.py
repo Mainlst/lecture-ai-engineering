@@ -1,4 +1,3 @@
-# fmt: off
 import json
 import os
 import time
@@ -24,12 +23,10 @@ TOL_ACC = -0.02  # 精度は2%まで低下許容
 TOL_TIME = 0.20  # 推論時間は+0.20秒まで許容
 
 
-
 def load_metrics():
     """ベースライン指標を読み込み"""
     with open(BASE_MET_PATH) as f:
         return json.load(f)
-
 
 
 def load_data():
@@ -37,11 +34,8 @@ def load_data():
     df = pd.read_csv(DATA_PATH)
     X = df.drop("Survived", axis=1)
     y = df["Survived"].astype(int)
-    _, X_test, _, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+    _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     return X_test, y_test
-
 
 
 def infer_time(model, X):
@@ -50,7 +44,6 @@ def infer_time(model, X):
     model.predict(X)
     end = time.time()
     return end - start
-
 
 
 def test_regression():
@@ -71,9 +64,7 @@ def test_regression():
     new_acc = accuracy_score(y_test, new_model.predict(X_test))
     new_time = infer_time(new_model, X_test)
 
-    assert new_acc >= base_acc + TOL_ACC, (
-        f"精度劣化: {base_acc:.3f}→{new_acc:.3f}"
-    )
-    assert new_time <= base_time + TOL_TIME, (
-        f"推論遅延: {base_time:.2f}s→{new_time:.2f}s"
-    )
+    assert new_acc >= base_acc + TOL_ACC, f"精度劣化: {base_acc:.3f}→{new_acc:.3f}"
+    assert (
+        new_time <= base_time + TOL_TIME
+    ), f"推論遅延: {base_time:.2f}s→{new_time:.2f}s"
