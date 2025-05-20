@@ -36,7 +36,9 @@ MODEL_PATH = os.path.join(MODEL_DIR, "titanic_model.pkl")
 CURRENT_METRICS_PATH = "current_metrics.json"  # ★修正点：リポジトリルートからの相対パス
 # GitHub Actionsでダウンロードされた過去のメトリクスファイルへのパス
 # (ワークフローの download-artifact の path とアーティファクト名に合わせる)
-PREVIOUS_METRICS_ARTIFACT_DIR = "previous_metrics_artifact"  # ★修正点：リポジトリルートからの相対パス
+PREVIOUS_METRICS_ARTIFACT_DIR = (
+    "previous_metrics_artifact"  # ★修正点：リポジトリルートからの相対パス
+)
 PREVIOUS_METRICS_PATH = os.path.join(
     PREVIOUS_METRICS_ARTIFACT_DIR, "current_metrics.json"
 )  # アップロード時と同じファイル名
