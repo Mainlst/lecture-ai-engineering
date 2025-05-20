@@ -2,11 +2,12 @@ import json
 import os
 import time
 
-import pytest
-import pickle
 import pandas as pd
+import pickle
+import pytest
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
+
 
 # ファイルパス定義
 ROOT = os.path.dirname(__file__)
@@ -16,15 +17,18 @@ BASE_MODEL_PATH = os.path.join(BASE_PATH, "baseline_model.pkl")
 NEW_MODEL_PATH = os.path.join(BASE_PATH, "titanic_model.pkl")
 DATA_PATH = os.path.join(ROOT, "../data/Titanic.csv")
 
+
 # 許容範囲設定
 TOL_ACC = -0.02  # 精度は2%まで低下許容
 TOL_TIME = 0.20  # 推論時間は+0.20秒まで許容
+
 
 
 def load_metrics():
     """ベースライン指標を読み込み"""
     with open(BASE_MET_PATH) as f:
         return json.load(f)
+
 
 
 def load_data():
@@ -38,12 +42,14 @@ def load_data():
     return X_test, y_test
 
 
+
 def infer_time(model, X):
     """モデルの推論時間を計測"""
     start = time.time()
     model.predict(X)
     end = time.time()
     return end - start
+
 
 
 def test_regression():
