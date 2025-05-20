@@ -27,16 +27,18 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
 # メトリクスファイルはリポジトリルート直下に current_metrics.json として保存する想定
 BASE_DIR = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)  # リポジトリルート
+)  # このBASE_DIRの定義は、今回のメトリクスパス修正には直接使われませんが、他のパスで利用されている可能性を考慮し残します。
 DATA_PATH = os.path.join(os.path.dirname(__file__), "../data/Titanic.csv")
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "../models")
 MODEL_PATH = os.path.join(MODEL_DIR, "titanic_model.pkl")
 
 # メトリクスファイルのパス (リポジトリのルート直下に保存/参照する想定)
-CURRENT_METRICS_PATH = os.path.join(BASE_DIR, "current_metrics.json")
+CURRENT_METRICS_PATH = "current_metrics.json"  # ★修正点：リポジトリルートからの相対パス
 # GitHub Actionsでダウンロードされた過去のメトリクスファイルへのパス
 # (ワークフローの download-artifact の path とアーティファクト名に合わせる)
-PREVIOUS_METRICS_ARTIFACT_DIR = os.path.join(BASE_DIR, "previous_metrics_artifact")
+PREVIOUS_METRICS_ARTIFACT_DIR = (
+    "previous_metrics_artifact"  # ★修正点：リポジトリルートからの相対パス
+)
 PREVIOUS_METRICS_PATH = os.path.join(
     PREVIOUS_METRICS_ARTIFACT_DIR, "current_metrics.json"
 )  # アップロード時と同じファイル名
@@ -309,7 +311,7 @@ def test_performance_regression():
     )
 
     print(
-        f"性能比較 - 精度:      現在={current_accuracy:.4f}, 過去={previous_accuracy:.4f if previous_accuracy else 'N/A'}"
+        f"性能比較 - 精度:       現在={current_accuracy:.4f}, 過去={previous_accuracy:.4f if previous_accuracy else 'N/A'}"
     )
     print(
         f"性能比較 - 平均推論時間: 現在={current_inference_time_avg:.4f}ms, 過去={previous_inference_time_avg:.4f if previous_inference_time_avg else 'N/A'}ms"

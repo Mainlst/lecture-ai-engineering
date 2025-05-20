@@ -41,7 +41,7 @@ def prepare_data(test_size=0.2, random_state=42):
 
 # 学習と評価
 def train_and_evaluate(
-    X_train, X_test, y_train, y_test, n_estimators=100, max_depth=None, random_state=42
+    X_train, X_test, y_train, y_test, n_estimators=150, max_depth=None, random_state=42
 ):
     model = RandomForestClassifier(
         n_estimators=n_estimators, max_depth=max_depth, random_state=random_state
