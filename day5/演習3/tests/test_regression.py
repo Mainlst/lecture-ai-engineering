@@ -1,9 +1,10 @@
+# fmt: off
 import json
 import os
 import time
+import pickle
 
 import pandas as pd
-import pickle
 import pytest
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
@@ -54,27 +55,22 @@ def infer_time(model, X):
 
 def test_regression():
     """新旧モデルの精度・推論時間を比較し、退化を検知"""
-    # ベースラインがない場合はスキップ
     if not os.path.exists(BASE_MODEL_PATH):
         pytest.skip("ベースラインモデルがありません")
 
-    # データとベースライン指標を取得
     base_metrics = load_metrics()
     X_test, y_test = load_data()
 
-    # ベースラインモデル評価
     with open(BASE_MODEL_PATH, "rb") as f:
         base_model = pickle.load(f)
     base_acc = accuracy_score(y_test, base_model.predict(X_test))
     base_time = infer_time(base_model, X_test)
 
-    # 新モデル評価
     with open(NEW_MODEL_PATH, "rb") as f:
         new_model = pickle.load(f)
     new_acc = accuracy_score(y_test, new_model.predict(X_test))
     new_time = infer_time(new_model, X_test)
 
-    # 退化判定（精度・時間）
     assert new_acc >= base_acc + TOL_ACC, (
         f"精度劣化: {base_acc:.3f}→{new_acc:.3f}"
     )
