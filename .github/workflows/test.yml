@@ -49,11 +49,33 @@ jobs:
     # --- Model Testing and Metrics ---
     - name: Download previous model metrics (for PRs, if base branch is main/master)
       if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'master')
-      uses: actions/download-artifact@v4
-      with:
-        name: model-metrics-${{ github.base_ref }} # ブランチ固有のアーティファクト名 (main または master)
-        path: ./previous_metrics_artifact # ダウンロード先のフォルダ (リポジトリルート直下)
-      continue-on-error: true # アーティファクトがなくてもエラーにしない
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitHub CLIがAPIを叩くために必要です
+        TARGET_BRANCH: ${{ github.base_ref }}
+      run: |
+        echo "Attempting to download metrics for branch: $TARGET_BRANCH"
+        LATEST_SUCCESSFUL_RUN_ID=$(gh run list --workflow "${{ github.workflow_id }}" --branch "$TARGET_BRANCH" --status success --limit 1 --json databaseId -q '.[0].databaseId')
+
+        if [ -z "$LATEST_SUCCESSFUL_RUN_ID" ] || [ "$LATEST_SUCCESSFUL_RUN_ID" == "null" ]; then
+          echo "No successful run found on branch '$TARGET_BRANCH' for workflow '${{ github.workflow_id }}'. Skipping download."
+          # continue-on-error: true の代わりのような振る舞いのため、ここでエラー終了しない
+          # この後のテストで previous_metrics_artifact が存在しないことを考慮する必要がある
+        else
+          echo "Found latest successful run ID on branch '$TARGET_BRANCH': $LATEST_SUCCESSFUL_RUN_ID"
+          echo "Downloading artifact: model-metrics-$TARGET_BRANCH from run ID: $LATEST_SUCCESSFUL_RUN_ID"
+          gh run download "$LATEST_SUCCESSFUL_RUN_ID" -R "${{ github.repository }}" -n "model-metrics-$TARGET_BRANCH" --dir ./previous_metrics_artifact
+          # ダウンロード成功したかを確認するためにファイル存在チェックをしても良い
+          if [ -f "./previous_metrics_artifact/current_metrics.json" ]; then # アップロード時のファイル名が current_metrics.json の場合
+            echo "Artifact downloaded successfully."
+          else
+            echo "Artifact download seems to have failed or the expected file is not present."
+            # ここで失敗扱いにするか、テスト側で処理するか
+          fi
+        fi
+      # このステップ全体をエラーで止めないようにするには、ステップに continue-on-error: true を追加します。
+      # ただし、スクリプト内でエラーハンドリングしているので、なくても良いかもしれません。
+      # 必要に応じて調整してください。
+      continue-on-error: true
 
     - name: Run model training and tests (generates current_metrics.json)
       run: |
